@@ -32,12 +32,22 @@ function buildQuery(userId) {
 export function subscribeTasks(userId, callback) {
   const q = buildQuery(userId);
   return onSnapshot(q, (snapshot) => {
-    const tasks = snapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-      createdAt: d.data().createdAt?.toDate?.() ?? new Date(),
-      deadline: d.data().deadline?.toDate?.() ?? null,
-    }));
+    const tasks = snapshot.docs.map((d) => {
+      const data = d.data();
+      // Convert Timestamps in chain entries
+      const chain = (data.chain || []).map((entry) => ({
+        ...entry,
+        createdAt: entry.createdAt?.toDate?.() ?? new Date(),
+        deadline: entry.deadline?.toDate?.() ?? null,
+      }));
+      return {
+        id: d.id,
+        ...data,
+        chain,
+        createdAt: data.createdAt?.toDate?.() ?? new Date(),
+        deadline: data.deadline?.toDate?.() ?? null,
+      };
+    });
     callback(tasks);
   });
 }
@@ -51,7 +61,7 @@ export async function createTask(userId, { title, description, emergency, deadli
     emergency: emergency || 3,
     status: 'in-progress',
     sequelOf: null,
-    history: [],
+    chain: [],
     createdAt: serverTimestamp(),
     deadline: deadline ? Timestamp.fromDate(new Date(deadline)) : null,
   });
@@ -64,16 +74,54 @@ export async function completeTask(taskId) {
   });
 }
 
-/**
- * Reopen a completed task with a sequel.
- * Appends old title to history, sets a new title.
- */
-export async function reopenWithSequel(taskId, currentTitle, currentHistory, newTitle) {
-  const updatedHistory = [...(currentHistory || []), currentTitle];
+/** Mark a completed task back as in-progress (undo done). */
+export async function uncompleteTask(taskId) {
   return updateDoc(doc(db, TASKS_COLLECTION, taskId), {
     status: 'in-progress',
-    title: newTitle,
-    history: updatedHistory,
+  });
+}
+
+/**
+ * Create a sequel task linked to a completed parent.
+ * The new task gets its own description, deadline, and creation date.
+ * The parent's info is appended to the chain for history display.
+ */
+export async function createSequel(userId, parentTask, { title, description, emergency, deadline }) {
+  const parentEntry = {
+    taskId: parentTask.id,
+    title: parentTask.title,
+    description: parentTask.description || '',
+    createdAt: parentTask.createdAt instanceof Date
+      ? Timestamp.fromDate(parentTask.createdAt)
+      : parentTask.createdAt,
+    deadline: parentTask.deadline instanceof Date
+      ? Timestamp.fromDate(parentTask.deadline)
+      : parentTask.deadline ?? null,
+  };
+
+  // Rebuild the chain: convert any Date objects in existing chain back to Timestamps for Firestore
+  const existingChain = (parentTask.chain || []).map((entry) => ({
+    ...entry,
+    createdAt: entry.createdAt instanceof Date
+      ? Timestamp.fromDate(entry.createdAt)
+      : entry.createdAt,
+    deadline: entry.deadline instanceof Date
+      ? Timestamp.fromDate(entry.deadline)
+      : entry.deadline ?? null,
+  }));
+
+  const newChain = [...existingChain, parentEntry];
+
+  return addDoc(collection(db, TASKS_COLLECTION), {
+    userId,
+    title,
+    description: description || '',
+    emergency: emergency || parentTask.emergency,
+    status: 'in-progress',
+    sequelOf: parentTask.id,
+    chain: newChain,
+    createdAt: serverTimestamp(),
+    deadline: deadline ? Timestamp.fromDate(new Date(deadline)) : null,
   });
 }
 

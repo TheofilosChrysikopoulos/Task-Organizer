@@ -19,20 +19,33 @@ function isOverdue(deadline) {
   return new Date(deadline) < now;
 }
 
-export default function TaskCard({ task, onComplete, onReopen, onEdit, onDelete }) {
+export default function TaskCard({ task, onComplete, onUncomplete, onCreateSequel, onEdit, onDelete }) {
   const [showSequel, setShowSequel] = useState(false);
   const [sequelTitle, setSequelTitle] = useState('');
+  const [sequelDescription, setSequelDescription] = useState('');
+  const [sequelDeadline, setSequelDeadline] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const [expandedPrequel, setExpandedPrequel] = useState(null);
   const isCompleted = task.status === 'completed';
   const overdue = !isCompleted && isOverdue(task.deadline);
 
-  function handleReopen(e) {
+  function handleCreateSequel(e) {
     e.preventDefault();
     if (sequelTitle.trim()) {
-      onReopen(task.id, task.title, task.history, sequelTitle.trim());
+      onCreateSequel(task, {
+        title: sequelTitle.trim(),
+        description: sequelDescription.trim(),
+        deadline: sequelDeadline || null,
+      });
       setSequelTitle('');
+      setSequelDescription('');
+      setSequelDeadline('');
       setShowSequel(false);
     }
+  }
+
+  function togglePrequel(index) {
+    setExpandedPrequel(expandedPrequel === index ? null : index);
   }
 
   return (
@@ -62,7 +75,12 @@ export default function TaskCard({ task, onComplete, onReopen, onEdit, onDelete 
             </button>
           )}
           {isCompleted && (
-            <button className="btn btn-reopen" onClick={() => setShowSequel(!showSequel)} title="Reopen with sequel">
+            <button className="btn btn-uncomplete" onClick={() => onUncomplete(task.id)} title="Mark as in-progress">
+              ↩
+            </button>
+          )}
+          {isCompleted && (
+            <button className="btn btn-reopen" onClick={() => setShowSequel(!showSequel)} title="Create sequel task">
               ↻
             </button>
           )}
@@ -75,16 +93,42 @@ export default function TaskCard({ task, onComplete, onReopen, onEdit, onDelete 
         </div>
       </div>
 
-      {/* History chain */}
-      {task.history && task.history.length > 0 && (
+      {/* History chain — clickable prequel items */}
+      {task.chain && task.chain.length > 0 && (
         <div className="task-history">
-          {task.history.map((h, i) => (
-            <span key={i} className="history-item">
-              {h}
-              <span className="history-arrow">→</span>
-            </span>
-          ))}
-          <span className="history-current">{task.title}</span>
+          <div className="history-chain">
+            {task.chain.map((entry, i) => (
+              <span key={i}>
+                <span
+                  className="history-item clickable"
+                  onClick={() => togglePrequel(i)}
+                  title="Click to view details"
+                >
+                  {entry.title}
+                </span>
+                <span className="history-arrow">→</span>
+              </span>
+            ))}
+            <span className="history-current">{task.title}</span>
+          </div>
+          {/* Expanded prequel details */}
+          {expandedPrequel !== null && task.chain[expandedPrequel] && (
+            <div className="prequel-details">
+              <div className="prequel-header">
+                <strong>{task.chain[expandedPrequel].title}</strong>
+                <button className="prequel-close" onClick={() => setExpandedPrequel(null)}>✕</button>
+              </div>
+              <div className="prequel-meta">
+                <span>Created {formatDate(task.chain[expandedPrequel].createdAt)}</span>
+                {task.chain[expandedPrequel].deadline && (
+                  <span>Due {formatDate(task.chain[expandedPrequel].deadline)}</span>
+                )}
+              </div>
+              {task.chain[expandedPrequel].description && (
+                <div className="prequel-description">{task.chain[expandedPrequel].description}</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -93,19 +137,35 @@ export default function TaskCard({ task, onComplete, onReopen, onEdit, onDelete 
         <div className="task-description">{task.description}</div>
       )}
 
-      {/* Sequel input */}
+      {/* Sequel form — full form with title, description, deadline */}
       {showSequel && (
-        <form className="sequel-form" onSubmit={handleReopen}>
+        <form className="sequel-form" onSubmit={handleCreateSequel}>
           <input
             type="text"
-            placeholder="Next task title..."
+            placeholder="Sequel task title..."
             value={sequelTitle}
             onChange={(e) => setSequelTitle(e.target.value)}
             autoFocus
             className="sequel-input"
+            required
           />
-          <button type="submit" className="btn btn-sequel-submit">Reopen</button>
-          <button type="button" className="btn btn-cancel" onClick={() => setShowSequel(false)}>Cancel</button>
+          <textarea
+            placeholder="Description (optional)..."
+            value={sequelDescription}
+            onChange={(e) => setSequelDescription(e.target.value)}
+            className="sequel-textarea"
+            rows={2}
+          />
+          <div className="sequel-row">
+            <input
+              type="date"
+              value={sequelDeadline}
+              onChange={(e) => setSequelDeadline(e.target.value)}
+              className="sequel-date"
+            />
+            <button type="submit" className="btn btn-sequel-submit">Create Sequel</button>
+            <button type="button" className="btn btn-cancel" onClick={() => setShowSequel(false)}>Cancel</button>
+          </div>
         </form>
       )}
     </div>

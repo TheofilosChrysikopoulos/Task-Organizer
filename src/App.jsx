@@ -6,7 +6,8 @@ import {
   subscribeTasks,
   createTask,
   completeTask,
-  reopenWithSequel,
+  uncompleteTask,
+  createSequel,
   updateTask,
   deleteTask,
 } from './taskService';
@@ -66,7 +67,7 @@ function Dashboard() {
         (t) =>
           t.title.toLowerCase().includes(q) ||
           t.description?.toLowerCase().includes(q) ||
-          t.history?.some((h) => h.toLowerCase().includes(q))
+          t.chain?.some((entry) => entry.title.toLowerCase().includes(q))
       );
     }
     return result;
@@ -92,8 +93,12 @@ function Dashboard() {
     await completeTask(taskId);
   }
 
-  async function handleReopen(taskId, currentTitle, history, newTitle) {
-    await reopenWithSequel(taskId, currentTitle, history, newTitle);
+  async function handleUncomplete(taskId) {
+    await uncompleteTask(taskId);
+  }
+
+  async function handleCreateSequel(parentTask, { title, description, deadline }) {
+    await createSequel(user.uid, parentTask, { title, description, deadline });
   }
 
   async function handleDelete(taskId) {
@@ -204,7 +209,8 @@ function Dashboard() {
               key={task.id}
               task={task}
               onComplete={handleComplete}
-              onReopen={handleReopen}
+              onUncomplete={handleUncomplete}
+              onCreateSequel={handleCreateSequel}
               onEdit={handleEdit}
               onDelete={handleDelete}
             />
