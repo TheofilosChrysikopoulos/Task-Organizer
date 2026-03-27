@@ -6,7 +6,6 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
   onSnapshot,
   getDocs,
   writeBatch,
@@ -16,25 +15,30 @@ import { db } from './firebase';
 
 const PROJECTS_COLLECTION = 'projects';
 
-function buildQuery(userId) {
-  return query(
-    collection(db, PROJECTS_COLLECTION),
-    where('userId', '==', userId),
-    orderBy('createdAt', 'asc')
-  );
-}
-
 /** Subscribe to real-time project updates. Returns an unsubscribe function. */
 export function subscribeProjects(userId, callback) {
-  const q = buildQuery(userId);
-  return onSnapshot(q, (snapshot) => {
-    const projects = snapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-      createdAt: d.data().createdAt?.toDate?.() ?? new Date(),
-    }));
-    callback(projects);
-  });
+  // Simple query: only equality filter, no orderBy → no composite index needed
+  const q = query(
+    collection(db, PROJECTS_COLLECTION),
+    where('userId', '==', userId)
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const projects = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate?.() ?? new Date(),
+      }));
+      // Sort client-side by createdAt asc
+      projects.sort((a, b) => a.createdAt - b.createdAt);
+      callback(projects);
+    },
+    (error) => {
+      console.error('subscribeProjects error:', error);
+      callback([]);
+    }
+  );
 }
 
 /** Create a new project. Returns the doc reference. */

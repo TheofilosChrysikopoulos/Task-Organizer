@@ -6,7 +6,6 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
   onSnapshot,
   serverTimestamp,
   Timestamp,
@@ -15,38 +14,41 @@ import { db } from './firebase';
 
 const TASKS_COLLECTION = 'tasks';
 
-function buildQuery(userId, projectId) {
-  return query(
-    collection(db, TASKS_COLLECTION),
-    where('userId', '==', userId),
-    where('projectId', '==', projectId),
-    orderBy('emergency', 'desc'),
-    orderBy('createdAt', 'asc')
-  );
-}
-
 /** Subscribe to real-time task updates for a project. Returns an unsubscribe function. */
 export function subscribeTasks(userId, projectId, callback) {
-  const q = buildQuery(userId, projectId);
-  return onSnapshot(q, (snapshot) => {
-    const tasks = snapshot.docs.map((d) => {
-      const data = d.data();
-      // Convert Timestamps in chain entries
-      const chain = (data.chain || []).map((entry) => ({
-        ...entry,
-        createdAt: entry.createdAt?.toDate?.() ?? new Date(),
-        deadline: entry.deadline?.toDate?.() ?? null,
-      }));
-      return {
-        id: d.id,
-        ...data,
-        chain,
-        createdAt: data.createdAt?.toDate?.() ?? new Date(),
-        deadline: data.deadline?.toDate?.() ?? null,
-      };
-    });
-    callback(tasks);
-  });
+  // Simple query: only equality filters, no orderBy → no composite index needed
+  const q = query(
+    collection(db, TASKS_COLLECTION),
+    where('userId', '==', userId),
+    where('projectId', '==', projectId)
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const tasks = snapshot.docs.map((d) => {
+        const data = d.data();
+        const chain = (data.chain || []).map((entry) => ({
+          ...entry,
+          createdAt: entry.createdAt?.toDate?.() ?? new Date(),
+          deadline: entry.deadline?.toDate?.() ?? null,
+        }));
+        return {
+          id: d.id,
+          ...data,
+          chain,
+          createdAt: data.createdAt?.toDate?.() ?? new Date(),
+          deadline: data.deadline?.toDate?.() ?? null,
+        };
+      });
+      // Sort client-side: emergency desc, then createdAt asc
+      tasks.sort((a, b) => b.emergency - a.emergency || a.createdAt - b.createdAt);
+      callback(tasks);
+    },
+    (error) => {
+      console.error('subscribeTasks error:', error);
+      callback([]);
+    }
+  );
 }
 
 /** Create a new task. */
