@@ -79,9 +79,9 @@ function Dashboard() {
     return unsub;
   }, [user]);
 
-  // Migrate orphan tasks once projects are loaded and "Traffic Simulation" exists
+  // Migrate orphan tasks (tasks without projectId) to "Traffic Simulation"
   useEffect(() => {
-    if (!user || migrated || projects.length === 0) return;
+    if (!user || migrated) return;
     const trafficSim = projects.find((p) => p.name === 'Traffic Simulation');
     if (trafficSim) {
       migrateOrphanTasks(user.uid, trafficSim.id).then((count) => {
