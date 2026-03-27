@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AuthProvider, useAuth } from './AuthContext';
 import TaskForm from './TaskForm';
 import TaskCard from './TaskCard';
+import ProjectSelector from './ProjectSelector';
 import {
   subscribeTasks,
   createTask,
@@ -11,6 +12,13 @@ import {
   updateTask,
   deleteTask,
 } from './taskService';
+import {
+  subscribeProjects,
+  createProject,
+  renameProject,
+  deleteProject,
+  migrateOrphanTasks,
+} from './projectService';
 import './App.css';
 
 function LoginPage() {
@@ -44,17 +52,62 @@ function LoginPage() {
 
 function Dashboard() {
   const { user, logout } = useAuth();
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all'); // 'all', 'in-progress', 'completed'
+  const [filter, setFilter] = useState('all');
   const [editingTask, setEditingTask] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [migrated, setMigrated] = useState(false);
 
+  // Subscribe to projects
   useEffect(() => {
     if (!user) return;
-    const unsub = subscribeTasks(user.uid, setTasks);
+    const unsub = subscribeProjects(user.uid, (fetchedProjects) => {
+      setProjects(fetchedProjects);
+      // Auto-select first project if none selected
+      if (fetchedProjects.length > 0) {
+        setSelectedProjectId((prev) => {
+          if (prev && fetchedProjects.some((p) => p.id === prev)) return prev;
+          return fetchedProjects[0].id;
+        });
+      } else {
+        setSelectedProjectId(null);
+      }
+    });
     return unsub;
   }, [user]);
+
+  // Migrate orphan tasks once projects are loaded and "Traffic Simulation" exists
+  useEffect(() => {
+    if (!user || migrated || projects.length === 0) return;
+    const trafficSim = projects.find((p) => p.name === 'Traffic Simulation');
+    if (trafficSim) {
+      migrateOrphanTasks(user.uid, trafficSim.id).then((count) => {
+        if (count > 0) console.log(`Migrated ${count} orphan tasks to Traffic Simulation`);
+        setMigrated(true);
+      });
+    } else {
+      // Create the default project for existing tasks
+      createProject(user.uid, 'Traffic Simulation').then((ref) => {
+        migrateOrphanTasks(user.uid, ref.id).then((count) => {
+          if (count > 0) console.log(`Migrated ${count} orphan tasks to Traffic Simulation`);
+          setMigrated(true);
+        });
+      });
+    }
+  }, [user, projects, migrated]);
+
+  // Subscribe to tasks for selected project
+  useEffect(() => {
+    if (!user || !selectedProjectId) {
+      setTasks([]);
+      return;
+    }
+    const unsub = subscribeTasks(user.uid, selectedProjectId, setTasks);
+    return unsub;
+  }, [user, selectedProjectId]);
 
   const filteredTasks = useMemo(() => {
     let result = tasks;
@@ -79,8 +132,10 @@ function Dashboard() {
     return { total: tasks.length, inProgress, completed };
   }, [tasks]);
 
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+
   async function handleCreate(data) {
-    await createTask(user.uid, data);
+    await createTask(user.uid, selectedProjectId, data);
     setShowForm(false);
   }
 
@@ -114,6 +169,21 @@ function Dashboard() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  async function handleCreateProject(name) {
+    await createProject(user.uid, name);
+  }
+
+  async function handleRenameProject(projectId, name) {
+    await renameProject(projectId, name);
+  }
+
+  async function handleDeleteProject(projectId) {
+    await deleteProject(projectId);
+    if (selectedProjectId === projectId) {
+      setSelectedProjectId(null);
+    }
+  }
+
   return (
     <div className="dashboard">
       <header className="app-header">
@@ -138,85 +208,112 @@ function Dashboard() {
         </div>
       </header>
 
-      <div className="stats-bar">
-        <div className="stat">
-          <span className="stat-num">{stats.total}</span>
-          <span className="stat-label">Total</span>
-        </div>
-        <div className="stat">
-          <span className="stat-num stat-progress">{stats.inProgress}</span>
-          <span className="stat-label">In Progress</span>
-        </div>
-        <div className="stat">
-          <span className="stat-num stat-done">{stats.completed}</span>
-          <span className="stat-label">Completed</span>
-        </div>
-      </div>
-
-      <div className="toolbar">
-        <div className="search-box">
-          <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input
-            type="text"
-            placeholder="Search tasks..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="search-input"
+      <div className="dashboard-body">
+        <aside className="sidebar">
+          <ProjectSelector
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            onSelect={setSelectedProjectId}
+            onCreate={handleCreateProject}
+            onRename={handleRenameProject}
+            onDelete={handleDeleteProject}
           />
-          {search && (
-            <button className="search-clear" onClick={() => setSearch('')}>✕</button>
+        </aside>
+
+        <main className="main-content">
+          {selectedProjectId ? (
+            <>
+              <h2 className="project-title-bar">{selectedProject?.name}</h2>
+
+              <div className="stats-bar">
+                <div className="stat">
+                  <span className="stat-num">{stats.total}</span>
+                  <span className="stat-label">Total</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-num stat-progress">{stats.inProgress}</span>
+                  <span className="stat-label">In Progress</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-num stat-done">{stats.completed}</span>
+                  <span className="stat-label">Completed</span>
+                </div>
+              </div>
+
+              <div className="toolbar">
+                <div className="search-box">
+                  <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search tasks..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="search-input"
+                  />
+                  {search && (
+                    <button className="search-clear" onClick={() => setSearch('')}>✕</button>
+                  )}
+                </div>
+                <div className="filter-tabs">
+                  {['all', 'in-progress', 'completed'].map((f) => (
+                    <button
+                      key={f}
+                      className={`filter-tab ${filter === f ? 'active' : ''}`}
+                      onClick={() => setFilter(f)}
+                    >
+                      {f === 'all' ? 'All' : f === 'in-progress' ? 'In Progress' : 'Completed'}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="btn btn-primary btn-new"
+                  onClick={() => { setEditingTask(null); setShowForm(!showForm); }}
+                >
+                  {showForm && !editingTask ? '− Close' : '+ New Task'}
+                </button>
+              </div>
+
+              {showForm && (
+                <div className="form-container">
+                  <TaskForm
+                    key={editingTask?.id || 'new'}
+                    onSubmit={editingTask ? handleUpdate : handleCreate}
+                    editingTask={editingTask}
+                    onCancelEdit={() => { setEditingTask(null); setShowForm(false); }}
+                  />
+                </div>
+              )}
+
+              <div className="task-list">
+                {filteredTasks.length === 0 ? (
+                  <div className="empty-state">
+                    {search ? 'No tasks match your search.' : 'No tasks yet. Create one to get started!'}
+                  </div>
+                ) : (
+                  filteredTasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onComplete={handleComplete}
+                      onUncomplete={handleUncomplete}
+                      onCreateSequel={handleCreateSequel}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="empty-state">
+              {projects.length === 0
+                ? 'Create a project to get started!'
+                : 'Select a project from the sidebar.'}
+            </div>
           )}
-        </div>
-        <div className="filter-tabs">
-          {['all', 'in-progress', 'completed'].map((f) => (
-            <button
-              key={f}
-              className={`filter-tab ${filter === f ? 'active' : ''}`}
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all' ? 'All' : f === 'in-progress' ? 'In Progress' : 'Completed'}
-            </button>
-          ))}
-        </div>
-        <button
-          className="btn btn-primary btn-new"
-          onClick={() => { setEditingTask(null); setShowForm(!showForm); }}
-        >
-          {showForm && !editingTask ? '− Close' : '+ New Task'}
-        </button>
-      </div>
-
-      {showForm && (
-        <div className="form-container">
-          <TaskForm
-            key={editingTask?.id || 'new'}
-            onSubmit={editingTask ? handleUpdate : handleCreate}
-            editingTask={editingTask}
-            onCancelEdit={() => { setEditingTask(null); setShowForm(false); }}
-          />
-        </div>
-      )}
-
-      <div className="task-list">
-        {filteredTasks.length === 0 ? (
-          <div className="empty-state">
-            {search ? 'No tasks match your search.' : 'No tasks yet. Create one to get started!'}
-          </div>
-        ) : (
-          filteredTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onComplete={handleComplete}
-              onUncomplete={handleUncomplete}
-              onCreateSequel={handleCreateSequel}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
-          ))
-        )}
+        </main>
       </div>
     </div>
   );

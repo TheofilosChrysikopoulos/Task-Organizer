@@ -15,22 +15,19 @@ import { db } from './firebase';
 
 const TASKS_COLLECTION = 'tasks';
 
-function tasksRef(userId) {
-  return collection(db, TASKS_COLLECTION);
-}
-
-function buildQuery(userId) {
+function buildQuery(userId, projectId) {
   return query(
-    tasksRef(userId),
+    collection(db, TASKS_COLLECTION),
     where('userId', '==', userId),
+    where('projectId', '==', projectId),
     orderBy('emergency', 'desc'),
     orderBy('createdAt', 'asc')
   );
 }
 
-/** Subscribe to real-time task updates. Returns an unsubscribe function. */
-export function subscribeTasks(userId, callback) {
-  const q = buildQuery(userId);
+/** Subscribe to real-time task updates for a project. Returns an unsubscribe function. */
+export function subscribeTasks(userId, projectId, callback) {
+  const q = buildQuery(userId, projectId);
   return onSnapshot(q, (snapshot) => {
     const tasks = snapshot.docs.map((d) => {
       const data = d.data();
@@ -53,9 +50,10 @@ export function subscribeTasks(userId, callback) {
 }
 
 /** Create a new task. */
-export async function createTask(userId, { title, description, emergency, deadline }) {
+export async function createTask(userId, projectId, { title, description, emergency, deadline }) {
   return addDoc(collection(db, TASKS_COLLECTION), {
     userId,
+    projectId,
     title,
     description: description || '',
     emergency: emergency || 3,
@@ -114,6 +112,7 @@ export async function createSequel(userId, parentTask, { title, description, eme
 
   return addDoc(collection(db, TASKS_COLLECTION), {
     userId,
+    projectId: parentTask.projectId,
     title,
     description: description || '',
     emergency: emergency || parentTask.emergency,
