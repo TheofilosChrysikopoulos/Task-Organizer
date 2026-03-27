@@ -23,6 +23,7 @@ export default function TaskCard({ task, onComplete, onUncomplete, onCreateSeque
   const [showSequel, setShowSequel] = useState(false);
   const [sequelTitle, setSequelTitle] = useState('');
   const [sequelDescription, setSequelDescription] = useState('');
+  const [sequelEmergency, setSequelEmergency] = useState(task.emergency);
   const [sequelDeadline, setSequelDeadline] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [expandedPrequel, setExpandedPrequel] = useState(null);
@@ -35,10 +36,12 @@ export default function TaskCard({ task, onComplete, onUncomplete, onCreateSeque
       onCreateSequel(task, {
         title: sequelTitle.trim(),
         description: sequelDescription.trim(),
+        emergency: Number(sequelEmergency),
         deadline: sequelDeadline || null,
       });
       setSequelTitle('');
       setSequelDescription('');
+      setSequelEmergency(task.emergency);
       setSequelDeadline('');
       setShowSequel(false);
     }
@@ -157,6 +160,17 @@ export default function TaskCard({ task, onComplete, onUncomplete, onCreateSeque
             rows={2}
           />
           <div className="sequel-row">
+            <select
+              value={sequelEmergency}
+              onChange={(e) => setSequelEmergency(e.target.value)}
+              className="sequel-select"
+            >
+              <option value={1}>1 - Low</option>
+              <option value={2}>2 - Medium-Low</option>
+              <option value={3}>3 - Medium</option>
+              <option value={4}>4 - High</option>
+              <option value={5}>5 - Critical</option>
+            </select>
             <input
               type="date"
               value={sequelDeadline}

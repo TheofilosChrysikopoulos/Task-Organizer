@@ -772,6 +772,22 @@ body {
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
 }
 
+.sequel-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  width: 160px;
+  background: var(--surface);
+}
+
+.sequel-select:focus {
+  outline: none;
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
 .sequel-row {
   display: flex;
   gap: 8px;

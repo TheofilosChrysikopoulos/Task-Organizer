@@ -97,8 +97,9 @@ function Dashboard() {
     await uncompleteTask(taskId);
   }
 
-  async function handleCreateSequel(parentTask, { title, description, deadline }) {
-    await createSequel(user.uid, parentTask, { title, description, deadline });
+  async function handleCreateSequel(parentTask, { title, description, emergency, deadline }) {
+    await createSequel(user.uid, parentTask, { title, description, emergency, deadline });
+    await deleteTask(parentTask.id);
   }
 
   async function handleDelete(taskId) {
