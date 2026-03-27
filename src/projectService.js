@@ -57,10 +57,10 @@ export async function deleteProject(projectId) {
 }
 
 /**
- * Migrate existing tasks that have no projectId to a given project.
- * This runs once for users who had tasks before the projects feature.
+ * Migrate tasks that have no projectId (or an invalid one) to a given project.
+ * Also accepts a set of valid project IDs to detect orphaned tasks.
  */
-export async function migrateOrphanTasks(userId, projectId) {
+export async function migrateOrphanTasks(userId, projectId, validProjectIds) {
   const q = query(
     collection(db, 'tasks'),
     where('userId', '==', userId),
@@ -70,7 +70,9 @@ export async function migrateOrphanTasks(userId, projectId) {
   let count = 0;
 
   snapshot.docs.forEach((d) => {
-    if (!d.data().projectId) {
+    const taskProjectId = d.data().projectId;
+    // Migrate if no projectId, or if projectId doesn't match any existing project
+    if (!taskProjectId || !validProjectIds.has(taskProjectId)) {
       batch.update(d.ref, { projectId });
       count++;
     }

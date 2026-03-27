@@ -60,12 +60,14 @@ function Dashboard() {
   const [editingTask, setEditingTask] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [migrated, setMigrated] = useState(false);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
 
   // Subscribe to projects
   useEffect(() => {
     if (!user) return;
     const unsub = subscribeProjects(user.uid, (fetchedProjects) => {
       setProjects(fetchedProjects);
+      setProjectsLoaded(true);
       // Auto-select first project if none selected
       if (fetchedProjects.length > 0) {
         setSelectedProjectId((prev) => {
@@ -79,25 +81,25 @@ function Dashboard() {
     return unsub;
   }, [user]);
 
-  // Migrate orphan tasks (tasks without projectId) to "Traffic Simulation"
+  // Migrate orphan tasks — only runs after projects subscription has delivered data
   useEffect(() => {
-    if (!user || migrated) return;
-    const trafficSim = projects.find((p) => p.name === 'Traffic Simulation');
-    if (trafficSim) {
-      migrateOrphanTasks(user.uid, trafficSim.id).then((count) => {
-        if (count > 0) console.log(`Migrated ${count} orphan tasks to Traffic Simulation`);
-        setMigrated(true);
-      });
-    } else {
-      // Create the default project for existing tasks
-      createProject(user.uid, 'Traffic Simulation').then((ref) => {
-        migrateOrphanTasks(user.uid, ref.id).then((count) => {
-          if (count > 0) console.log(`Migrated ${count} orphan tasks to Traffic Simulation`);
-          setMigrated(true);
-        });
-      });
+    if (!user || migrated || !projectsLoaded) return;
+
+    async function runMigration() {
+      let targetProject = projects.find((p) => p.name === 'Traffic Simulation');
+      if (!targetProject) {
+        const ref = await createProject(user.uid, 'Traffic Simulation');
+        targetProject = { id: ref.id };
+      }
+      const validIds = new Set(projects.map((p) => p.id));
+      validIds.add(targetProject.id);
+      const count = await migrateOrphanTasks(user.uid, targetProject.id, validIds);
+      if (count > 0) console.log(`Migrated ${count} orphan tasks to Traffic Simulation`);
+      setMigrated(true);
     }
-  }, [user, projects, migrated]);
+
+    runMigration();
+  }, [user, projects, migrated, projectsLoaded]);
 
   // Subscribe to tasks for selected project
   useEffect(() => {
